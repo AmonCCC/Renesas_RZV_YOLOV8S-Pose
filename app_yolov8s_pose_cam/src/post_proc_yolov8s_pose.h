@@ -11,6 +11,8 @@
 #define POST_PROC_H
 
 #include "define.h"
+#include "box.h"
+#include "box_yolov8s_pose.h"
 
 class PostProc
 {
@@ -20,7 +22,7 @@ class PostProc
         void init_param();
         /* box[s]: [64,G,G], cls[s]: [1,G,G], kpt[s]: [51,G,G], s = 0..2 (80/40/20)
            output_buf: [num_grid_points][num_channels] */
-        void PrePost_Proc(float* const box[3], float* const cls[3], float* const kpt[3], float* output_buf);
+        void PrePost_Proc(float* const box[3], float* const cls[3], float* const kpt[3], std::vector<pose_detection>& det_out);
 
     private:
         static inline float sigmoid(float x) { return 1.0f / (1.0f + expf(-x)); }

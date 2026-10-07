@@ -125,7 +125,10 @@ bool delay_frame_inserted = false;
 ******************************************/
 float float16_to_float32(uint16_t a)
 {
-    return __extendXfYf2__<uint16_t, uint16_t, 10, float, uint32_t, 23>(a);
+    __fp16 h;
+    memcpy(&h, &a, sizeof(h));
+    return (float)h;
+    //return __extendXfYf2__<uint16_t, uint16_t, 10, float, uint32_t, 23>(a);
 }
 
 /*****************************************
@@ -170,6 +173,8 @@ static int8_t wait_join(pthread_t *p_join_thread, uint32_t join_time)
 ******************************************/
 int8_t get_result()
 {
+    struct timespec g0, g1;
+    timespec_get(&g0, TIME_UTC);
     int32_t output_num = runtime.GetNumOutput();
     if (output_num != 9)
     {
@@ -206,6 +211,8 @@ int8_t get_result()
             return -1;
         }
     }
+    timespec_get(&g1, TIME_UTC);
+    spdlog::info("  GetOutput x9 : {} [ms]", std::round(timedifference_msec(g0, g1) * 10) / 10);
     return 0;
 }
 
@@ -221,56 +228,12 @@ int8_t get_result()
 void R_Post_Proc()
 {
     /* PrePost */
-    float drpai_output_buf[num_inf_out];
     float* box[3] = { output_box_80, output_box_40, output_box_20 };
     float* cls[3] = { output_conf_80, output_conf_40, output_conf_20 };
     float* kpt[3] = { output_kpt_80, output_kpt_40, output_kpt_20 };
-    post_proc.PrePost_Proc(box, cls, kpt, drpai_output_buf);
 
     vector<pose_detection> det_buff;
-    float confidence = 0;
-    Box bb;
-    vector<Kpts> kpts(NUM_KPTS);
-    pose_detection d;
-    float predictions[num_grid_points][num_channels];
-
-    /* Convert 2D array */
-    for (int i = 0; i < num_grid_points; i++)
-    {
-        for (int j = 0; j < num_channels; j++)
-        {
-            predictions[i][j] = drpai_output_buf[i * num_channels + j];
-        }
-    }
-
-    for (int i = 0; i < num_grid_points; i++)
-    {
-        confidence = (float)predictions[i][4];
-
-        if (confidence > TH_PROB)
-        {
-            float scale_w = (float)DRPAI_IN_WIDTH / (float)MODEL_IN_W;
-            float scale_h = (float)DRPAI_IN_HEIGHT / (float)MODEL_IN_H;
-
-            /* Box */
-            bb.x = (float)predictions[i][0] * scale_w;
-            bb.y = (float)predictions[i][1] * scale_h;
-            bb.w = (float)predictions[i][2] * scale_w;
-            bb.h = (float)predictions[i][3] * scale_h;
-
-            /* Keypoint */
-            for (int j = 0; j < NUM_KPTS; j++)
-            {
-                int idx = 5 + j * 3;
-                kpts[j].x = predictions[i][idx] * scale_w;
-                kpts[j].y = predictions[i][idx + 1] * scale_h;
-                kpts[j].c = predictions[i][idx + 2];
-            }
-
-            d = {bb, kpts, confidence};
-            det_buff.push_back(d);
-        }
-    }
+    post_proc.PrePost_Proc(box, cls, kpt, det_buff);
 
     /* Non-Maximum Supression filter */
     filter_boxes_nms_pose(det_buff, det_buff.size(), TH_NMS);
@@ -441,6 +404,10 @@ void *R_Inf_Thread(void *threadid)
     int8_t ret = 0;
     /*Variable for Performance Measurement*/
 
+    static struct timespec getres_start_time;
+    static struct timespec getres_end_time;
+    static struct timespec pp_start_time;
+    static struct timespec pp_end_time;
     static struct timespec inf_start_time;
     static struct timespec inf_end_time;
     static struct timespec pre_start_time;
@@ -541,7 +508,9 @@ void *R_Inf_Thread(void *threadid)
         inference_start.store(0);
 
         /*Process to read the DRPAI output data.*/
+        timespec_get(&getres_start_time, TIME_UTC);
         ret = get_result();
+        timespec_get(&getres_end_time, TIME_UTC);
         if (0 != ret)
         {
             fprintf(stderr, "[ERROR] Failed to get result from memory.\n");
@@ -549,7 +518,9 @@ void *R_Inf_Thread(void *threadid)
         }
 
         /*CPU Post-Processing For YOLOV8S Pose*/
+        timespec_get(&pp_start_time, TIME_UTC);
         R_Post_Proc();
+        timespec_get(&pp_end_time, TIME_UTC);
 
         /*R_Post_Proc time end*/
         ret = timespec_get(&post_end_time, TIME_UTC);
@@ -570,6 +541,8 @@ void *R_Inf_Thread(void *threadid)
         spdlog::info("PreProcess     : {} [ms]", std::round(pre_time   * 10) / 10);
         spdlog::info("Inference      : {} [ms]", std::round(ai_time    * 10) / 10);
         spdlog::info("PostProcess: {} [ms]", std::round(post_time * 10) / 10);
+        spdlog::info("  get_result : {} [ms]", std::round(timedifference_msec(getres_start_time, getres_end_time) * 10) / 10);
+        spdlog::info("  R_Post_Proc: {} [ms]", std::round(timedifference_msec(pp_start_time, pp_end_time) * 10) / 10);
 
 #ifdef DISP_AI_FRAME_RATE
         int arraySum = std::accumulate(array_drp_time, array_drp_time + SIZE_OF_ARRAY(array_drp_time), 0);

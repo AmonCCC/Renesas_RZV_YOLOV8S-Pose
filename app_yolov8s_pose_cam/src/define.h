@@ -126,6 +126,7 @@ const static uint32_t num_grid_points = num_grid_0 + num_grid_1 + num_grid_2; //
 const static uint32_t num_channels = BOX_SIZE + 1 + KPT_CH;  // 56
 const static uint32_t num_inf_out = num_channels * num_grid_points;
 
+#define TH_PROB_LOGIT               (-1.0986f)   // TH_PROB 0.25f, logit = ln(0.25/0.75) = -1.0986
 #define TH_PROB                     (0.25f)
 #define TH_NMS                      (0.45f)
 #define TH_KPTS                     (0.5f)

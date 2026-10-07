@@ -29,12 +29,12 @@ PostProc::~PostProc()
 
 void PostProc::init_param() {}
 
-void PostProc::PrePost_Proc(float* const box[3], float* const cls[3], float* const kpt[3], float* output_buf)
+void PostProc::PrePost_Proc(float* const box[3], float* const cls[3], float* const kpt[3], std::vector<pose_detection>& det_out)
 {
-    /* 沒過閾值的格子 conf = 0，R_Post_Proc 會直接略過 */
-    memset(output_buf, 0, sizeof(float) * num_inf_out);
+    const float scale_w = (float)DRPAI_IN_WIDTH  / (float)MODEL_IN_W;
+    const float scale_h = (float)DRPAI_IN_HEIGHT / (float)MODEL_IN_H;
+    det_out.clear();
 
-    uint32_t row = 0;
     for (int s = 0; s < NUM_INF_OUT_LAYER; s++)
     {
         const int G = num_grids[s];
@@ -46,16 +46,16 @@ void PostProc::PrePost_Proc(float* const box[3], float* const cls[3], float* con
 
         for (int gy = 0; gy < G; gy++)
         {
-            for (int gx = 0; gx < G; gx++, row++)
+            for (int gx = 0; gx < G; gx++)
             {
                 const int p = gy * G + gx;
+
+                /* 先用 logit 比較，過濾掉絕大多數格子，省下 expf */
+                if (c[p] <= TH_PROB_LOGIT) continue;
                 const float score = sigmoid(c[p]);
-                if (score <= TH_PROB) continue;
 
-                float* out = output_buf + (size_t)row * num_channels;
-
-                /* DFL: softmax over 16 bins -> expectation, order = l, t, r, b (in grid units) */
-                float d[4];
+                /* DFL: softmax over 16 bins -> expectation, order = l, t, r, b (grid units) */
+                float d4[4];
                 for (int side = 0; side < 4; side++)
                 {
                     float v[DFL_BINS];
@@ -72,33 +72,30 @@ void PostProc::PrePost_Proc(float* const box[3], float* const cls[3], float* con
                         sum += e;
                         val += e * i;
                     }
-                    d[side] = val / sum;
+                    d4[side] = val / sum;
                 }
 
                 const float ax = gx + 0.5f;
                 const float ay = gy + 0.5f;
-                const float x1 = (ax - d[0]) * stride;
-                const float y1 = (ay - d[1]) * stride;
-                const float x2 = (ax + d[2]) * stride;
-                const float y2 = (ay + d[3]) * stride;
+                const float x1 = (ax - d4[0]) * stride;
+                const float y1 = (ay - d4[1]) * stride;
+                const float x2 = (ax + d4[2]) * stride;
+                const float y2 = (ay + d4[3]) * stride;
 
-                /* center x, y, w, h (640x640 model input coordinates) */
-                out[0] = (x1 + x2) * 0.5f;
-                out[1] = (y1 + y2) * 0.5f;
-                out[2] = x2 - x1;
-                out[3] = y2 - y1;
-                out[4] = score;
-
-                /* Keypoints: x = (kx*2 + gx)*stride, y = (ky*2 + gy)*stride, conf = sigmoid */
+                pose_detection d;
+                d.bbox.x = (x1 + x2) * 0.5f * scale_w;
+                d.bbox.y = (y1 + y2) * 0.5f * scale_h;
+                d.bbox.w = (x2 - x1) * scale_w;
+                d.bbox.h = (y2 - y1) * scale_h;
+                d.prob = score;
+                d.kpts.resize(NUM_KPTS);
                 for (int j = 0; j < NUM_KPTS; j++)
                 {
-                    const float kx = k[(j * 3 + 0) * HW + p];
-                    const float ky = k[(j * 3 + 1) * HW + p];
-                    const float kc = k[(j * 3 + 2) * HW + p];
-                    out[5 + j * 3 + 0] = (kx * 2.0f + gx) * stride;
-                    out[5 + j * 3 + 1] = (ky * 2.0f + gy) * stride;
-                    out[5 + j * 3 + 2] = sigmoid(kc);
+                    d.kpts[j].x = (k[(j*3+0)*HW + p] * 2.0f + gx) * stride * scale_w;
+                    d.kpts[j].y = (k[(j*3+1)*HW + p] * 2.0f + gy) * stride * scale_h;
+                    d.kpts[j].c = sigmoid(k[(j*3+2)*HW + p]);
                 }
+                det_out.push_back(std::move(d));
             }
         }
     }
