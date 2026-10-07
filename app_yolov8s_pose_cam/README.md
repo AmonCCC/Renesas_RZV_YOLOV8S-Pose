@@ -24,10 +24,10 @@
 
 ## AI models
 
-1. [yolov8s-pose_cut.onnx](./yolov8s-pose_cut.onnx) created is follow from [How_to_convert_yolov8pose_onnx_models.md](https://github.com/renesas-rz/rzv_drp-ai_tvm/blob/Release-2026-06-30/docs/model_list/how_to_convert/How_to_convert_yolov8pose_onnx_models.md).
+1. [yolov8s-pose_cut.onnx](../yolov8s-pose_cut.onnx) created is follow from [How_to_convert_yolov8pose_onnx_models.md](https://github.com/renesas-rz/rzv_drp-ai_tvm/blob/Release-2026-06-30/docs/model_list/how_to_convert/How_to_convert_yolov8pose_onnx_models.md).
 
 2. Compile model
-You can using [compile_onnx_model_quant.py](./compile_onnx_model_quant.py) in this git repository or follow below commmand to modify compile_onnx_model_quant.py in docker
+You can using [compile_onnx_model_quant.py](../compile_onnx_model_quant.py) in this git repository or follow below commmand to modify compile_onnx_model_quant.py in docker
 
 ```bash
 cd $TVM_ROOT/tutorials
